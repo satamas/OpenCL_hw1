@@ -8,8 +8,8 @@
 
 using namespace std;
 
-void convolution(float * A, float * B, float * C, size_t n, size_t m){
-    memset(C, 0, n*n* sizeof(float));
+void convolution(float *A, float *B, float *C, size_t n, size_t m) {
+    memset(C, 0, n * n * sizeof(float));
 
     cl_device_id device_id = NULL;
     cl_context context = NULL;
@@ -44,7 +44,6 @@ void convolution(float * A, float * B, float * C, size_t n, size_t m){
     b_memobj = clCreateBuffer(context, CL_MEM_READ_ONLY, m * m * sizeof(float), NULL, &ret);
     c_memobj = clCreateBuffer(context, CL_MEM_READ_WRITE, n * n * sizeof(float), NULL, &ret);
 
-
     ret = clEnqueueWriteBuffer(command_queue, a_memobj, (cl_bool) true, 0, n * n * sizeof(float), A, 0, NULL, NULL);
     ret = clEnqueueWriteBuffer(command_queue, b_memobj, (cl_bool) true, 0, m * m * sizeof(float), B, 0, NULL, NULL);
 
@@ -54,20 +53,20 @@ void convolution(float * A, float * B, float * C, size_t n, size_t m){
 
     kernel = clCreateKernel(program, "convolution", &ret);
 
+    size_t local_work_size = 0;
+    ret = clGetKernelWorkGroupInfo(kernel, device_id, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &local_work_size, NULL);
+    size_t const global_work_size = ((n * n) / local_work_size + 1) * local_work_size;
+
     ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *) &a_memobj);
     ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *) &b_memobj);
     ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *) &c_memobj);
     ret = clSetKernelArg(kernel, 3, sizeof(int), (void *) &n);
     ret = clSetKernelArg(kernel, 4, sizeof(int), (void *) &m);
 
-    size_t const global_work_size = n*n;
-    size_t const local_work_size = 1;
     ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_work_size, &local_work_size, 0, NULL, NULL);
     assert(ret == 0);
 
     ret = clEnqueueReadBuffer(command_queue, c_memobj, (cl_bool) true, 0, n * n * sizeof(float), C, 0, NULL, NULL);
-
-
 
     ret = clReleaseProgram(program);
     ret = clReleaseMemObject(c_memobj);
@@ -86,17 +85,19 @@ int main() {
     in >> sizeB;
 
     float *A = new float[sizeA * sizeA];
-    for(int i = 0; i < sizeA; ++i){
-        for(int j = 0; j < sizeA; ++j){
-            in >> A[j + i*sizeA];
+    for (int i = 0; i < sizeA; ++i) {
+        for (int j = 0; j < sizeA; ++j) {
+            in >> A[j + i * sizeA];
         }
     }
+
     float *B = new float[sizeB * sizeB];
-    for(int i = 0; i < sizeA; ++i){
-        for(int j = 0; j < sizeA; ++j){
-            in >> B[j + i*sizeA];
+    for (int i = 0; i < sizeB; ++i) {
+        for (int j = 0; j < sizeB; ++j) {
+            in >> B[j + i * sizeB];
         }
     }
+
     float *C = new float[sizeA * sizeA];
 
     convolution(A, B, C, sizeA, sizeB);
@@ -109,6 +110,10 @@ int main() {
         }
         out << endl;
     }
+
+    delete[] A;
+    delete[] B;
+    delete[] C;
 
     return 0;
 }
