@@ -48,7 +48,7 @@ void prefix_sum(float *input_array, float *output_array, size_t n) {
 
         std::vector<cl::Event> step_complete_events;
 
-        for (int offset = 1; n / (offset * 2) >= 256; offset *= 2) {
+        for (int offset = 1; buffers_size / (offset * 2) >= 256; offset *= 2) {
             cl::CommandQueue queue1(context, devices[0]);
             cl::Event step_complete_event;
             cl::Kernel kernel(program, "prefix_sum_reduction");
