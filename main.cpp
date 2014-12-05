@@ -1,119 +1,134 @@
+#define __CL_ENABLE_EXCEPTIONS
+
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <CL/cl.h>
-#include <string.h>
-#include <assert.h>
-
+#include <CL/cl.hpp>
 
 using namespace std;
 
-void convolution(float *A, float *B, float *C, size_t n, size_t m) {
-    memset(C, 0, n * n * sizeof(float));
+inline size_t pow2roundup(size_t x) {
+    if (x < 0)
+        return 0;
+    --x;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    return x + 1;
+}
 
-    cl_device_id device_id = NULL;
-    cl_context context = NULL;
-    cl_command_queue command_queue = NULL;
-    cl_mem a_memobj = NULL;
-    cl_mem b_memobj = NULL;
-    cl_mem c_memobj = NULL;
-    cl_program program = NULL;
-    cl_kernel kernel = NULL;
-    cl_platform_id platform_id = NULL;
-    cl_uint ret_num_devices;
-    cl_uint ret_num_platforms;
-    cl_int ret;
+void prefix_sum(float *input_array, float *output_array, size_t n) {
+    memset(output_array, 0, n * sizeof(float));
+    size_t buffers_size = pow2roundup(n);
+    vector<cl::Platform> platforms;
+    vector<cl::Device> devices;
 
-    ifstream vector_add_file("convolution.cl");
-    if (vector_add_file.fail()) {
-        cout << "Can't open data file" << endl;
+    try {
+        cl::Platform::get(&platforms);
+        platforms[0].getDevices(CL_DEVICE_TYPE_DEFAULT, &devices);
+        cl::Context context(devices);
+        cl::CommandQueue queue(context, devices[0]);
+
+        ifstream vector_add_file("prefix_sum.cl");
+        if (vector_add_file.fail()) {
+            cout << "Can't open data file" << endl;
+        }
+        std::string source((std::istreambuf_iterator<char>(vector_add_file)),
+                std::istreambuf_iterator<char>());
+
+        cl::Program program(context, source);
+        program.build(devices);
+
+        cl::Buffer data(context, CL_MEM_READ_ONLY, sizeof(float) * buffers_size);
+
+        queue.enqueueWriteBuffer(data, (cl_bool) true, 0, n * sizeof(float), input_array);
+
+
+        std::vector<cl::Event> step_complete_events;
+
+        for (int offset = 1; n / (offset * 2) >= 256; offset *= 2) {
+            cl::CommandQueue queue1(context, devices[0]);
+            cl::Event step_complete_event;
+            cl::Kernel kernel(program, "prefix_sum_reduction");
+            kernel.setArg(0, data);
+            kernel.setArg(1, sizeof(int), &buffers_size);
+            kernel.setArg(2, sizeof(int), &offset);
+            queue1.enqueueNDRangeKernel(kernel, NULL, buffers_size / offset, 256, &step_complete_events, &step_complete_event);
+            step_complete_events.push_back(step_complete_event);
+        }
+
+        if (n < 512) {
+            int offset = 1;
+            cl::CommandQueue queue1(context, devices[0]);
+            cl::Event step_complete_event;
+            cl::Kernel kernel(program, "prefix_sum_reduction");
+            kernel.setArg(0, data);
+            kernel.setArg(1, sizeof(int), &buffers_size);
+            kernel.setArg(2, sizeof(int), &offset);
+            queue1.enqueueNDRangeKernel(kernel, NULL, 256, 256, &step_complete_events, &step_complete_event);
+            step_complete_events.push_back(step_complete_event);
+        }
+
+        {
+            int offset = n / 2;
+            cl::CommandQueue queue1(context, devices[0]);
+            cl::Event step_complete_event;
+            cl::Kernel kernel(program, "prefix_sum_down_sweep");
+            kernel.setArg(0, data);
+            kernel.setArg(1, sizeof(int), &buffers_size);
+            kernel.setArg(2, sizeof(int), &offset);
+            queue1.enqueueNDRangeKernel(kernel, NULL, 256, 256, &step_complete_events, &step_complete_event);
+            step_complete_events.push_back(step_complete_event);
+        }
+
+        for (int offset = n / 1024; offset > 0; offset /= 2) {
+            cl::CommandQueue queue1(context, devices[0]);
+            cl::Event step_complete_event;
+            cl::Kernel kernel(program, "prefix_sum_down_sweep");
+            kernel.setArg(0, data);
+            kernel.setArg(1, sizeof(int), &buffers_size);
+            kernel.setArg(2, sizeof(int), &offset);
+            queue1.enqueueNDRangeKernel(kernel, NULL, buffers_size / offset, 256, &step_complete_events, &step_complete_event);
+            step_complete_events.push_back(step_complete_event);
+        }
+
+
+        queue.enqueueReadBuffer(data, (cl_bool) true, 0, n * sizeof(float), output_array);
+        queue.finish();
+        cout << endl;
+    } catch (cl::Error e) {
+        cout << endl << e.what() << " : " << e.err() << endl;
     }
-    std::string vector_add_src((std::istreambuf_iterator<char>(vector_add_file)),
-            std::istreambuf_iterator<char>());
-
-    char const *src[] = {vector_add_src.c_str()};
-    size_t const src_length[] = {(size_t const) vector_add_src.size()};
-
-    ret = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
-    ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_DEFAULT, 1, &device_id, &ret_num_devices);
-
-    context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &ret);
-    command_queue = clCreateCommandQueueWithProperties(context, device_id, nullptr, &ret);
-
-    a_memobj = clCreateBuffer(context, CL_MEM_READ_ONLY, n * n * sizeof(float), NULL, &ret);
-    b_memobj = clCreateBuffer(context, CL_MEM_READ_ONLY, m * m * sizeof(float), NULL, &ret);
-    c_memobj = clCreateBuffer(context, CL_MEM_READ_WRITE, n * n * sizeof(float), NULL, &ret);
-
-    ret = clEnqueueWriteBuffer(command_queue, a_memobj, (cl_bool) true, 0, n * n * sizeof(float), A, 0, NULL, NULL);
-    ret = clEnqueueWriteBuffer(command_queue, b_memobj, (cl_bool) true, 0, m * m * sizeof(float), B, 0, NULL, NULL);
-
-    program = clCreateProgramWithSource(context, 1, src, src_length, &ret);
-
-    ret = clBuildProgram(program, ret_num_devices, &device_id, NULL, NULL, NULL);
-
-    kernel = clCreateKernel(program, "convolution", &ret);
-
-    size_t local_work_size = 0;
-    ret = clGetKernelWorkGroupInfo(kernel, device_id, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &local_work_size, NULL);
-    size_t const global_work_size = ((n * n) / local_work_size + 1) * local_work_size;
-
-    ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *) &a_memobj);
-    ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *) &b_memobj);
-    ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *) &c_memobj);
-    ret = clSetKernelArg(kernel, 3, sizeof(int), (void *) &n);
-    ret = clSetKernelArg(kernel, 4, sizeof(int), (void *) &m);
-
-    ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_work_size, &local_work_size, 0, NULL, NULL);
-    assert(ret == 0);
-
-    ret = clEnqueueReadBuffer(command_queue, c_memobj, (cl_bool) true, 0, n * n * sizeof(float), C, 0, NULL, NULL);
-
-    ret = clReleaseProgram(program);
-    ret = clReleaseMemObject(c_memobj);
-    ret = clReleaseMemObject(b_memobj);
-    ret = clReleaseMemObject(a_memobj);
-    ret = clReleaseCommandQueue(command_queue);
-    ret = clReleaseContext(context);
 }
 
 
 int main() {
 
     ifstream in("input.txt");
-    size_t sizeA, sizeB;
-    in >> sizeA;
-    in >> sizeB;
+    size_t size;
+    in >> size;
 
-    float *A = new float[sizeA * sizeA];
-    for (int i = 0; i < sizeA; ++i) {
-        for (int j = 0; j < sizeA; ++j) {
-            in >> A[j + i * sizeA];
-        }
+    float *input_array = new float[size];
+    for (int i = 0; i < size; ++i) {
+        in >> input_array[i];
     }
+    cout << endl;
 
-    float *B = new float[sizeB * sizeB];
-    for (int i = 0; i < sizeB; ++i) {
-        for (int j = 0; j < sizeB; ++j) {
-            in >> B[j + i * sizeB];
-        }
+    float *output_array = new float[size];
+
+    prefix_sum(input_array, output_array, size);
+
+
+    //ofstream out("output.txt");
+    for (int i = 0; i < size; ++i) {
+        cout << output_array[i] << ' ';
     }
+    cout << endl;
 
-    float *C = new float[sizeA * sizeA];
-
-    convolution(A, B, C, sizeA, sizeB);
-
-
-    ofstream out("output.txt");
-    for (int i = 0; i < sizeA; ++i) {
-        for (int j = 0; j < sizeA; ++j) {
-            out << C[j + i * sizeA] << ' ';
-        }
-        out << endl;
-    }
-
-    delete[] A;
-    delete[] B;
-    delete[] C;
+    delete[] input_array;
+    delete[] output_array;
 
     return 0;
 }

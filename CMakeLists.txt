@@ -13,7 +13,7 @@ else( OPENCL_HAS_CPP_BINDINGS )
 	message( "No OpenCL CPP bindings found" )
 endif( OPENCL_HAS_CPP_BINDINGS )
 
-configure_file(convolution.cl ${CMAKE_CURRENT_BINARY_DIR}/convolution.cl COPYONLY)
+configure_file(prefix_sum.cl ${CMAKE_CURRENT_BINARY_DIR}/prefix_sum.cl COPYONLY)
 configure_file(input.txt ${CMAKE_CURRENT_BINARY_DIR}/input.txt COPYONLY)
 
 set(SOURCE_FILES main.cpp)
