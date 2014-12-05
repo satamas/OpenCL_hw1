@@ -59,7 +59,7 @@ void prefix_sum(float *input_array, float *output_array, size_t n) {
             step_complete_events.push_back(step_complete_event);
         }
 
-        if (n < 512) {
+        if (buffers_size < 512) {
             int offset = 1;
             cl::CommandQueue queue1(context, devices[0]);
             cl::Event step_complete_event;
@@ -72,7 +72,7 @@ void prefix_sum(float *input_array, float *output_array, size_t n) {
         }
 
         {
-            int offset = n / 2;
+            int offset = buffers_size / 2;
             cl::CommandQueue queue1(context, devices[0]);
             cl::Event step_complete_event;
             cl::Kernel kernel(program, "prefix_sum_down_sweep");
@@ -83,7 +83,7 @@ void prefix_sum(float *input_array, float *output_array, size_t n) {
             step_complete_events.push_back(step_complete_event);
         }
 
-        for (int offset = n / 1024; offset > 0; offset /= 2) {
+        for (int offset = buffers_size / 1024; offset > 0; offset /= 2) {
             cl::CommandQueue queue1(context, devices[0]);
             cl::Event step_complete_event;
             cl::Kernel kernel(program, "prefix_sum_down_sweep");
@@ -95,7 +95,7 @@ void prefix_sum(float *input_array, float *output_array, size_t n) {
         }
 
 
-        queue.enqueueReadBuffer(data, (cl_bool) true, 0, n * sizeof(float), output_array);
+        queue.enqueueReadBuffer(data, (cl_bool) true, 0, n * sizeof(float), output_array, &step_complete_events);
         queue.finish();
         cout << endl;
     } catch (cl::Error e) {
