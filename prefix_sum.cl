@@ -1,4 +1,4 @@
-__kernel void prefix_sum_reduction(__global float * data, int n, int offset){
+__kernel void prefix_sum_reduction(__global float * data, int n, unsigned int offset){
    int thread_id = get_global_id(0);
    if(n / (offset * 2) > 256){
         if(offset*(2*thread_id+2) - 1 < n){
@@ -20,7 +20,7 @@ __kernel void prefix_sum_reduction(__global float * data, int n, int offset){
 }
 
 
-__kernel void prefix_sum_down_sweep(__global float * data, int n, int offset){
+__kernel void prefix_sum_down_sweep(__global float * data, int n, unsigned int offset){
    int thread_id = get_global_id(0);
    if(thread_id == 0 && offset == n/2){
         data[n-1] = 0;

@@ -48,13 +48,13 @@ void prefix_sum(float *input_array, float *output_array, size_t n) {
 
         std::vector<cl::Event> step_complete_events;
 
-        for (int offset = 1; buffers_size / (offset * 2) >= 256; offset *= 2) {
+        for (unsigned int offset = 1; buffers_size / (offset * 2) >= 256; offset *= 2) {
             cl::CommandQueue queue1(context, devices[0]);
             cl::Event step_complete_event;
             cl::Kernel kernel(program, "prefix_sum_reduction");
             kernel.setArg(0, data);
             kernel.setArg(1, sizeof(int), &buffers_size);
-            kernel.setArg(2, sizeof(int), &offset);
+            kernel.setArg(2, sizeof(unsigned int), &offset);
             queue1.enqueueNDRangeKernel(kernel, NULL, buffers_size / offset, 256, &step_complete_events, &step_complete_event);
             step_complete_events.push_back(step_complete_event);
         }
@@ -66,7 +66,7 @@ void prefix_sum(float *input_array, float *output_array, size_t n) {
             cl::Kernel kernel(program, "prefix_sum_reduction");
             kernel.setArg(0, data);
             kernel.setArg(1, sizeof(int), &buffers_size);
-            kernel.setArg(2, sizeof(int), &offset);
+            kernel.setArg(2, sizeof(unsigned int), &offset);
             queue1.enqueueNDRangeKernel(kernel, NULL, 256, 256, &step_complete_events, &step_complete_event);
             step_complete_events.push_back(step_complete_event);
         }
@@ -78,18 +78,18 @@ void prefix_sum(float *input_array, float *output_array, size_t n) {
             cl::Kernel kernel(program, "prefix_sum_down_sweep");
             kernel.setArg(0, data);
             kernel.setArg(1, sizeof(int), &buffers_size);
-            kernel.setArg(2, sizeof(int), &offset);
+            kernel.setArg(2, sizeof(unsigned int), &offset);
             queue1.enqueueNDRangeKernel(kernel, NULL, 256, 256, &step_complete_events, &step_complete_event);
             step_complete_events.push_back(step_complete_event);
         }
 
-        for (int offset = buffers_size / 1024; offset > 0; offset /= 2) {
+        for (unsigned int offset = buffers_size / 1024; offset > 0; offset /= 2) {
             cl::CommandQueue queue1(context, devices[0]);
             cl::Event step_complete_event;
             cl::Kernel kernel(program, "prefix_sum_down_sweep");
             kernel.setArg(0, data);
             kernel.setArg(1, sizeof(int), &buffers_size);
-            kernel.setArg(2, sizeof(int), &offset);
+            kernel.setArg(2, sizeof(unsigned int), &offset);
             queue1.enqueueNDRangeKernel(kernel, NULL, buffers_size / offset, 256, &step_complete_events, &step_complete_event);
             step_complete_events.push_back(step_complete_event);
         }
